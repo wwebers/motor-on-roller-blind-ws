@@ -36,7 +36,7 @@ String INDEX_HTML = R"(<!DOCTYPE html>
 
   var setActions = function(){
     doSend('(update)');
-    $.get('https://api.github.com/repos/nidayand/'+repo+'/releases', function(data){
+    $.get('https://api.github.com/repos/wwebers/'+repo+'/releases', function(data){
       if (data.length>0 && data[0].tag_name !== cversion){
         $('#cversion').text(cversion);
         $('#nversion').text(data[0].tag_name);
@@ -241,9 +241,9 @@ String INDEX_HTML = R"(<!DOCTYPE html>
     <div class='content'>
     <p>
       <ul>
-        <li>3d print files and instructions: <a href='https://www.thingiverse.com/thing:2392856' target='_blank'>https://www.thingiverse.com/thing:2392856</a></li>
-        <li>Github: <a href='https://github.com/nidayand/motor-on-roller-blind-ws' target='_blank'>https://github.com/nidayand/motor-on-roller-blind-ws</a></li>
-        <li>Licensed under <a href='https://raw.githubusercontent.com/nidayand/motor-on-roller-blind-ws/master/LICENSE' target='_blank'>MIT License</a></li>
+        <li>3d print files and instructions: <a href='https://www.thingiverse.com/thing:3091851' target='_blank'>https://www.thingiverse.com/thing:3091851</a></li>
+        <li>Github: <a href='https://github.com/wwebers/motor-on-roller-blind-ws' target='_blank'>https://github.com/wwebers/motor-on-roller-blind-ws</a></li>
+        <li>Licensed under <a href='https://raw.githubusercontent.com/wwebers/motor-on-roller-blind-ws/master/LICENSE' target='_blank'>MIT License</a></li>
       </ul>
     </p>
   </div>

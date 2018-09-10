@@ -21,7 +21,7 @@ String APpw = "nidayand";           //Hardcoded password for access point
 //----------------------------------------------------
 
 // Version number for checking if there are new code releases and notifying the user
-String version = "1.3.1";
+String version = "1.4";
 
 NidayandHelper helper = NidayandHelper();
 
@@ -54,6 +54,10 @@ Stepper_28BYJ_48 small_stepper(D1, D3, D2, D4); //Initiate stepper driver
 
 ESP8266WebServer server(80);              // TCP server at port 80 will respond to HTTP requests
 WebSocketsServer webSocket = WebSocketsServer(81);  // WebSockets will respond on port 81
+
+int step = 10; // distance for manual blinds controll
+u_int blinds_up_pin = D5;    // pin used for blinds up switch
+u_int blinds_down_pin = D6;  // pin used for blinds down switch
 
 bool loadConfig() {
   if (!helper.loadconfig()){
@@ -397,6 +401,10 @@ void setup(void)
     });
     ArduinoOTA.begin();
   }
+
+  // Setting pins D7 and D8 as input pins for switches
+  pinMode(blinds_up_pin, INPUT_PULLUP);
+  pinMode(blinds_down_pin, INPUT_PULLUP);
 }
 
 void loop(void)
@@ -464,6 +472,41 @@ void loop(void)
     */
     small_stepper.step(ccw ? path : -path);
     currentPosition = currentPosition + path;
+  }
+
+  /**
+   * Check if on of the manual switch is pressed
+   */
+  if((digitalRead(blinds_up_pin) == LOW) && (currentPosition > 0)) {
+    // blinds up
+    Serial.println("Switch 'up' pressed.");
+    small_stepper.step(ccw ? -step : step);
+    currentPosition = currentPosition - step;
+
+    int pos = (currentPosition * 100)/maxPosition;
+
+    webSocket.broadcastTXT("{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
+    sendmsg(outputTopic, "{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
+
+    saveItNow = true;
+  }
+  else if((digitalRead(blinds_down_pin) == LOW) && (currentPosition < maxPosition)) {
+    // blinds down
+    Serial.println("Switch 'down' pressed.");
+    if(currentPosition < (maxPosition-step)) {
+      small_stepper.step(ccw ? step : -step);
+      currentPosition = currentPosition + step;
+    }
+    else {
+      small_stepper.step(ccw ? (maxPosition-currentPosition) : -(maxPosition-currentPosition));
+      currentPosition = maxPosition;
+    }
+    int pos = (currentPosition * 100)/maxPosition;
+
+    webSocket.broadcastTXT("{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
+    sendmsg(outputTopic, "{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
+
+    saveItNow = true;
   }
 
   /*
