@@ -26,7 +26,7 @@ Simply do not enter any string in the MQTT server form field upon WIFI configura
 - `0-100` - (auto mode) A number between 0-100 to set % of opened blind. Requires calibration before use. E.g. `50` will open it to 50%
 
 # Required libraries (3rd party)
-- Stepper_28BYJ_48: https://github.com/thomasfredericks/Stepper_28BYJ_48/
+- AccelStepper: http://www.airspayce.com/mikem/arduino/AccelStepper/
 - PubSubClient: https://github.com/knolleary/pubsubclient/
 - ArduinoJson: https://github.com/bblanchon/ArduinoJson
 - WIFIManager: https://github.com/tzapu/WiFiManager
