@@ -50,9 +50,15 @@ boolean initLoop = true;            //To enable actions first time the loop is r
 boolean ccw = true;                 //Turns counter clockwise to lower the curtain
 
 AccelStepper small_stepper(AccelStepper::FULL4WIRE, D1, D3, D2, D4); //Initiate stepper driver
+const float MAX_SPEED = 650.0;
 
 ESP8266WebServer server(80);              // TCP server at port 80 will respond to HTTP requests
 WebSocketsServer webSocket = WebSocketsServer(81);  // WebSockets will respond on port 81
+
+void handleReleaseUp();
+void handleReleaseDown();
+void handleBlindsUp();
+void handleBlindsDown();
 
 u_int blinds_up_pin = D5;    // pin used for blinds up switch
 u_int blinds_down_pin = D6;  // pin used for blinds down switch
@@ -148,13 +154,13 @@ void processMsg(String res, uint8_t clientnum){
     /*
        Move down without limit to max position
     */
-    path = 1;
+    path = 100;
     action = "manual";
   } else if (res == "(-1)") {
     /*
        Move up without limit to top position
     */
-    path = -1;
+    path = -100;
     action = "manual";
   } else if (res == "(update)") {
     //Send position details to client
@@ -232,27 +238,27 @@ void handleNotFound(){
   server.send(404, "text/plain", message);
 }
 
-void handleBlindsUp() {
-  if(path >= 0) {
-    action = "manual";
-    path = -1;
-  }
-  else {
-    action = "";
-    path = 0;
-  }
+void handleReleaseUp() {
+  attachInterrupt(digitalPinToInterrupt(blinds_up_pin), handleBlindsUp, FALLING);
+  small_stepper.stop();
 }
 
-void handleBlindsDown() {
-  if(path <= 0) {
-    action = "manual";
-    path = 1;
-  }
-  else {
-    action = "";
-    path = 0;
-  }
+void handleReleaseDown() {
+  attachInterrupt(digitalPinToInterrupt(blinds_down_pin), handleBlindsDown, FALLING);
+  small_stepper.stop();
 }
+
+void handleBlindsUp() {
+  attachInterrupt(digitalPinToInterrupt(blinds_up_pin), handleReleaseUp, RISING);
+  small_stepper.moveTo(0);
+}
+
+
+void handleBlindsDown() {
+  attachInterrupt(digitalPinToInterrupt(blinds_down_pin), handleReleaseDown, RISING);
+  small_stepper.moveTo(maxPosition);
+}
+
 
 void setup(void)
 {
@@ -416,12 +422,12 @@ void setup(void)
   pinMode(blinds_up_pin, INPUT_PULLUP);
   pinMode(blinds_down_pin, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(blinds_up_pin), handleBlindsUp, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(blinds_down_pin), handleBlindsDown, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(blinds_up_pin), handleBlindsUp, FALLING);
+  attachInterrupt(digitalPinToInterrupt(blinds_down_pin), handleBlindsDown, FALLING);
 
   small_stepper.setSpeed(100.0);
   small_stepper.setAcceleration(100.0);
-  small_stepper.setMaxSpeed(2400.0);
+  small_stepper.setMaxSpeed(MAX_SPEED);
 }
 
 void loop(void)
@@ -461,7 +467,8 @@ void loop(void)
     */
     if((small_stepper.currentPosition() != path) && !small_stepper.isRunning()) {
       small_stepper.moveTo(path);      
-    } else {
+    }
+    else {
       path = 0;
       action = "";
       int set = (setPos * 100)/maxPosition;
@@ -498,9 +505,7 @@ void loop(void)
     turn off all coils to avoid overheating and less energy
     consumption
   */
-  if(!small_stepper.distanceToGo() == 0) {
+  if(!small_stepper.isRunning()) {
     small_stepper.disableOutputs();
   }
-
-
 }
