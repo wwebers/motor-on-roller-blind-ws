@@ -174,7 +174,7 @@ String INDEX_HTML = R"(<!DOCTYPE html>
     </ons-card>
     <ons-card id='update-card' style='display:none'>
       <div class='title'>Update available</div>
-      <div class='content'>You are running <span id='cversion'></span> and <span id='nversion'></span> is the latest. Go to <a href='https://github.com/nidayand/motor-on-roller-blind-ws/releases'>the repo</a> to download</div>
+      <div class='content'>You are running <span id='cversion'></span> and <span id='nversion'></span> is the latest. Go to <a href='https://github.com/wwebers/motor-on-roller-blind-ws/releases'>the repo</a> to download</div>
     </ons-card>
   </ons-page>
 </template>

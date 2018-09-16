@@ -1,4 +1,4 @@
-#include <Stepper_28BYJ_48.h>
+#include <AccelStepper.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <PubSubClient.h>
@@ -40,9 +40,8 @@ char config_name[40];             //WIFI config: Bonjour name of device
 char config_rotation[40] = "false"; //WIFI config: Detault rotation is CCW
 
 String action;                      //Action manual/auto
-int path = 0;                       //Direction of blind (1 = down, 0 = stop, -1 = up)
+volatile int path = 0;              //Direction of blind (1 = down, 0 = stop, -1 = up)
 int setPos = 0;                     //The set position 0-100% by the client
-long currentPosition = 0;           //Current position of the blind
 long maxPosition = 2000000;         //Max position of the blind. Initial value
 boolean loadDataSuccess = false;
 boolean saveItNow = false;          //If true will store positions to SPIFFS
@@ -50,12 +49,11 @@ bool shouldSaveConfig = false;      //Used for WIFI Manager callback to save par
 boolean initLoop = true;            //To enable actions first time the loop is run
 boolean ccw = true;                 //Turns counter clockwise to lower the curtain
 
-Stepper_28BYJ_48 small_stepper(D1, D3, D2, D4); //Initiate stepper driver
+AccelStepper small_stepper(AccelStepper::FULL4WIRE, D1, D3, D2, D4); //Initiate stepper driver
 
 ESP8266WebServer server(80);              // TCP server at port 80 will respond to HTTP requests
 WebSocketsServer webSocket = WebSocketsServer(81);  // WebSockets will respond on port 81
 
-int step = 10; // distance for manual blinds controll
 u_int blinds_up_pin = D5;    // pin used for blinds up switch
 u_int blinds_down_pin = D6;  // pin used for blinds down switch
 
@@ -66,7 +64,7 @@ bool loadConfig() {
   JsonVariant json = helper.getconfig();
 
   //Store variables locally
-  currentPosition = long(json["currentPosition"]);
+  small_stepper.setCurrentPosition(long(json["currentPosition"]));
   maxPosition = long(json["maxPosition"]);
   strcpy(config_name, json["config_name"]);
   strcpy(mqtt_server, json["mqtt_server"]);
@@ -85,7 +83,7 @@ bool loadConfig() {
 bool saveConfig() {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& json = jsonBuffer.createObject();
-  json["currentPosition"] = currentPosition;
+  json["currentPosition"] = small_stepper.currentPosition();
   json["maxPosition"] = maxPosition;
   json["config_name"] = config_name;
   json["mqtt_server"] = mqtt_server;
@@ -116,7 +114,7 @@ void processMsg(String res, uint8_t clientnum){
      Check if calibration is running and if stop is received. Store the location
   */
   if (action == "set" && res == "(0)") {
-    maxPosition = currentPosition;
+    maxPosition = small_stepper.currentPosition();
     saveItNow = true;
   }
 
@@ -127,7 +125,7 @@ void processMsg(String res, uint8_t clientnum){
     /*
        Store the current position as the start position
     */
-    currentPosition = 0;
+    small_stepper.setCurrentPosition(0);
     path = 0;
     saveItNow = true;
     action = "manual";
@@ -135,7 +133,7 @@ void processMsg(String res, uint8_t clientnum){
     /*
        Store the max position of a closed blind
     */
-    maxPosition = currentPosition;
+    maxPosition = small_stepper.currentPosition();
     path = 0;
     saveItNow = true;
     action = "manual";
@@ -161,7 +159,7 @@ void processMsg(String res, uint8_t clientnum){
   } else if (res == "(update)") {
     //Send position details to client
     int set = (setPos * 100)/maxPosition;
-    int pos = (currentPosition * 100)/maxPosition;
+    int pos = (small_stepper.currentPosition() * 100)/maxPosition;
     sendmsg(outputTopic, "{ \"set\":"+String(set)+", \"position\":"+String(pos)+" }");
     webSocket.sendTXT(clientnum, "{ \"set\":"+String(set)+", \"position\":"+String(pos)+" }");
   } else if (res == "(ping)") {
@@ -177,7 +175,7 @@ void processMsg(String res, uint8_t clientnum){
     action = "auto";
 
     int set = (setPos * 100)/maxPosition;
-    int pos = (currentPosition * 100)/maxPosition;
+    int pos = (small_stepper.currentPosition() * 100)/maxPosition;
 
     //Send the instruction to all connected devices
     sendmsg(outputTopic, "{ \"set\":"+String(set)+", \"position\":"+String(pos)+" }");
@@ -208,17 +206,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   processMsg(res, NULL);
 }
 
-/**
-  Turn of power to coils whenever the blind
-  is not moving
-*/
-void stopPowerToCoils() {
-  digitalWrite(D1, LOW);
-  digitalWrite(D2, LOW);
-  digitalWrite(D3, LOW);
-  digitalWrite(D4, LOW);
-}
-
 /*
    Callback from WIFI Manager for saving configuration
 */
@@ -229,6 +216,7 @@ void saveConfigCallback () {
 void handleRoot() {
   server.send(200, "text/html", INDEX_HTML);
 }
+
 void handleNotFound(){
   String message = "File Not Found\n\n";
   message += "URI: ";
@@ -242,6 +230,28 @@ void handleNotFound(){
     message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
   }
   server.send(404, "text/plain", message);
+}
+
+void handleBlindsUp() {
+  if(path >= 0) {
+    action = "manual";
+    path = -1;
+  }
+  else {
+    action = "";
+    path = 0;
+  }
+}
+
+void handleBlindsDown() {
+  if(path <= 0) {
+    action = "manual";
+    path = 1;
+  }
+  else {
+    action = "";
+    path = 0;
+  }
 }
 
 void setup(void)
@@ -319,7 +329,7 @@ void setup(void)
   */
   loadDataSuccess = loadConfig();
   if (!loadDataSuccess) {
-    currentPosition = 0;
+    small_stepper.setCurrentPosition(0);
     maxPosition = 2000000;
   }
 
@@ -402,9 +412,16 @@ void setup(void)
     ArduinoOTA.begin();
   }
 
-  // Setting pins D7 and D8 as input pins for switches
+  // Setting up pins for switches to PULLUP mode to have a defined state
   pinMode(blinds_up_pin, INPUT_PULLUP);
   pinMode(blinds_down_pin, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(blinds_up_pin), handleBlindsUp, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(blinds_down_pin), handleBlindsDown, CHANGE);
+
+  small_stepper.setSpeed(100.0);
+  small_stepper.setAcceleration(100.0);
+  small_stepper.setMaxSpeed(2400.0);
 }
 
 void loop(void)
@@ -433,13 +450,6 @@ void loop(void)
     saveConfig();
     saveItNow = false;
 
-    /*
-      If no action is required by the motor make sure to
-      turn off all coils to avoid overheating and less energy
-      consumption
-    */
-    stopPowerToCoils();
-
   }
 
   /**
@@ -449,66 +459,28 @@ void loop(void)
     /*
        Automatically open or close blind
     */
-    if (currentPosition > path){
-      small_stepper.step(ccw ? -1: 1);
-      currentPosition = currentPosition - 1;
-    } else if (currentPosition < path){
-      small_stepper.step(ccw ? 1 : -1);
-      currentPosition = currentPosition + 1;
+    if((small_stepper.currentPosition() != path) && !small_stepper.isRunning()) {
+      small_stepper.moveTo(path);      
     } else {
       path = 0;
       action = "";
       int set = (setPos * 100)/maxPosition;
-      int pos = (currentPosition * 100)/maxPosition;
+      int pos = (small_stepper.currentPosition() * 100)/maxPosition;
       webSocket.broadcastTXT("{ \"set\":"+String(set)+", \"position\":"+String(pos)+" }");
       sendmsg(outputTopic, "{ \"set\":"+String(set)+", \"position\":"+String(pos)+" }");
       Serial.println("Stopped. Reached wanted position");
       saveItNow = true;
     }
-
- } else if (action == "manual" && path != 0) {
+  } 
+  else if (action == "manual" && path != 0) {
     /*
        Manually running the blind
     */
-    small_stepper.step(ccw ? path : -path);
-    currentPosition = currentPosition + path;
+    small_stepper.move(ccw ? path : -path);
   }
 
-  /**
-   * Check if on of the manual switch is pressed
-   */
-  if((digitalRead(blinds_up_pin) == LOW) && (currentPosition > 0)) {
-    // blinds up
-    Serial.println("Switch 'up' pressed.");
-    small_stepper.step(ccw ? -step : step);
-    currentPosition = currentPosition - step;
-
-    int pos = (currentPosition * 100)/maxPosition;
-
-    webSocket.broadcastTXT("{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
-    sendmsg(outputTopic, "{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
-
-    saveItNow = true;
-  }
-  else if((digitalRead(blinds_down_pin) == LOW) && (currentPosition < maxPosition)) {
-    // blinds down
-    Serial.println("Switch 'down' pressed.");
-    if(currentPosition < (maxPosition-step)) {
-      small_stepper.step(ccw ? step : -step);
-      currentPosition = currentPosition + step;
-    }
-    else {
-      small_stepper.step(ccw ? (maxPosition-currentPosition) : -(maxPosition-currentPosition));
-      currentPosition = maxPosition;
-    }
-    int pos = (currentPosition * 100)/maxPosition;
-
-    webSocket.broadcastTXT("{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
-    sendmsg(outputTopic, "{ \"set\":"+String(pos)+", \"position\":"+String(pos)+" }");
-
-    saveItNow = true;
-  }
-
+  small_stepper.run();
+  
   /*
      After running setup() the motor might still have
      power on some of the coils. This is making sure that
@@ -518,6 +490,17 @@ void loop(void)
   */
   if (initLoop) {
     initLoop = false;
-    stopPowerToCoils();
+    small_stepper.disableOutputs();
   }
+
+  /*
+    If no action is required by the motor make sure to
+    turn off all coils to avoid overheating and less energy
+    consumption
+  */
+  if(!small_stepper.distanceToGo() == 0) {
+    small_stepper.disableOutputs();
+  }
+
+
 }
