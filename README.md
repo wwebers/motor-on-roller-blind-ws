@@ -1,7 +1,9 @@
 # motor-on-roller-blind-ws
-WebSocket based version of [motor-on-roller-blind](https://github.com/nidayand/motor-on-roller-blind). I.e. there is no need of an MQTT server but MQTT is supported as well - you can control it with WebSockets and/or with MQTT messages.
+This one is a fork of Peter's original WebSocket version. This version got additional support for a physical switch to move the blinds.
 
-3d parts for printing are available on Thingiverse.com: ["motor on a roller blind"](https://www.thingiverse.com/thing:3091851)
+Otherwise it's the WebSocket based version of [motor-on-roller-blind](https://github.com/nidayand/motor-on-roller-blind). I.e. there is no need of an MQTT server but MQTT is supported as well - you can control it with WebSockets and/or with MQTT messages.
+
+Revised 3d parts for printing are available on Thingiverse.com: ["motor on a roller blind"](https://www.thingiverse.com/thing:3091851)
 
  1. A tiny webserver is setup on the esp8266 that will serve one page to the client
  2. Upon powering on the first time WIFI credentials, a hostname and - optional - MQTT server details is to be configured. You can specify if you want **clockwise (CW) rotation** to close the blind and you can also specify **MQTT authentication** if required. Connect your computer to a new WIFI hotspot named **BlindsConnectAP**. Password = **nidayand**
@@ -26,7 +28,7 @@ Simply do not enter any string in the MQTT server form field upon WIFI configura
 - `0-100` - (auto mode) A number between 0-100 to set % of opened blind. Requires calibration before use. E.g. `50` will open it to 50%
 
 # Required libraries (3rd party)
-- Stepper_28BYJ_48: https://github.com/thomasfredericks/Stepper_28BYJ_48/
+- AccelStepper: http://www.airspayce.com/mikem/arduino/AccelStepper/
 - PubSubClient: https://github.com/knolleary/pubsubclient/
 - ArduinoJson: https://github.com/bblanchon/ArduinoJson
 - WIFIManager: https://github.com/tzapu/WiFiManager
