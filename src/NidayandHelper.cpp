@@ -28,7 +28,7 @@ boolean NidayandHelper::loadconfig(){
   // use configFile.readString instead.
   configFile.readBytes(buf.get(), size);
 
-  StaticJsonBuffer<200> jsonBuffer;
+  StaticJsonBuffer<300> jsonBuffer;
   this->_config = jsonBuffer.parseObject(buf.get());
 
   if (!this->_config.success()) {

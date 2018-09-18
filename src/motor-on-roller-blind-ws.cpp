@@ -1,22 +1,25 @@
 #include <AccelStepper.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
+#include <MD5Builder.h>
+#include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <WiFiUdp.h>
 #include <WiFiManager.h>
 #include <ArduinoJson.h>
-#include "FS.h"
+#include <FS.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
 #include <WebSocketsServer.h>
-#include <ArduinoOTA.h>
 #include "NidayandHelper.h"
 #include "index_html.h"
 
 //--------------- CHANGE PARAMETERS ------------------
 //Configure Default Settings for Access Point logon
-String APid = "BlindsConnectAP";    //Name of access point
-String APpw = "nidayand";           //Hardcoded password for access point
+String APid = "WindowBlinds";    // Name of access point
+String APpw = "welcome";         // Hardcoded password for access point
+//#define RESET_CONFIG
 
 //----------------------------------------------------
 
@@ -36,6 +39,11 @@ char mqtt_pwd[40];             //WIFI config: MQTT server password (optional)
 String outputTopic;               //MQTT topic for sending messages
 String inputTopic;                //MQTT topic for listening
 boolean mqttActive = true;
+
+MD5Builder ota_md5;
+char ota_hash[40];
+char ota_cleartxt[40] = "welcome";
+
 char config_name[40];             //WIFI config: Bonjour name of device
 char config_rotation[40] = "false"; //WIFI config: Detault rotation is CCW
 
@@ -54,6 +62,7 @@ const float MAX_SPEED = 650.0;
 
 ESP8266WebServer server(80);              // TCP server at port 80 will respond to HTTP requests
 WebSocketsServer webSocket = WebSocketsServer(81);  // WebSockets will respond on port 81
+ESP8266HTTPUpdateServer updateServer = ESP8266HTTPUpdateServer();
 
 void handleReleaseUp();
 void handleReleaseDown();
@@ -78,6 +87,7 @@ bool loadConfig() {
   strcpy(mqtt_uid, json["mqtt_uid"]);
   strcpy(mqtt_pwd, json["mqtt_pwd"]);
   strcpy(config_rotation, json["config_rotation"]);
+  strcpy(ota_hash, json["ota_pwd"]);
 
   return true;
 }
@@ -87,7 +97,7 @@ bool loadConfig() {
    on SPIFFS
 */
 bool saveConfig() {
-  StaticJsonBuffer<200> jsonBuffer;
+  StaticJsonBuffer<300> jsonBuffer;
   JsonObject& json = jsonBuffer.createObject();
   json["currentPosition"] = small_stepper.currentPosition();
   json["maxPosition"] = maxPosition;
@@ -97,6 +107,12 @@ bool saveConfig() {
   json["mqtt_uid"] = mqtt_uid;
   json["mqtt_pwd"] = mqtt_pwd;
   json["config_rotation"] = config_rotation;
+
+  ota_md5.begin();
+  ota_md5.add(ota_cleartxt);
+  ota_md5.calculate();
+  ota_md5.getChars(ota_hash);
+  json["ota_pwd"] = ota_hash;
 
   return helper.saveconfig(json);
 }
@@ -279,6 +295,7 @@ void setup(void)
   //Define customer parameters for WIFI Manager
   WiFiManagerParameter custom_config_name("Name", "Bonjour name", config_name, 40);
   WiFiManagerParameter custom_rotation("Rotation", "Clockwise rotation", config_rotation, 40);
+  WiFiManagerParameter custom_ota_pwd("OTA", "OTA password", ota_cleartxt, 40);
   WiFiManagerParameter custom_text("<p><b>Optional MQTT server parameters:</b></p>");
   WiFiManagerParameter custom_mqtt_server("server", "MQTT server", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "MQTT port", mqtt_port, 6);
@@ -288,14 +305,17 @@ void setup(void)
   //Setup WIFI Manager
   WiFiManager wifiManager;
 
-  //reset settings - for testing
-  //clean FS, for testing
-  //helper.resetsettings(wifiManager);
+  // reset settings - for testing
+  // clean FS, for testing
+#ifdef RESET_CONFIG  
+  helper.resetsettings(wifiManager);
+#endif
 
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   //add all your parameters here
   wifiManager.addParameter(&custom_config_name);
   wifiManager.addParameter(&custom_rotation);
+  wifiManager.addParameter(&custom_ota_pwd);
   wifiManager.addParameter(&custom_text);
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
@@ -323,6 +343,7 @@ void setup(void)
     strcpy(mqtt_uid, custom_mqtt_uid.getValue());
     strcpy(mqtt_pwd, custom_mqtt_pwd.getValue());
     strcpy(config_rotation, custom_rotation.getValue());
+    strcpy(ota_cleartxt, custom_ota_pwd.getValue());
 
     //Save the data
     saveConfig();
@@ -337,6 +358,10 @@ void setup(void)
   if (!loadDataSuccess) {
     small_stepper.setCurrentPosition(0);
     maxPosition = 2000000;
+    ota_md5.begin();
+    ota_md5.add(ota_cleartxt);
+    ota_md5.calculate();
+    ota_md5.getChars(ota_hash);
   }
 
   /*
@@ -344,6 +369,9 @@ void setup(void)
     */
   if (MDNS.begin(config_name)) {
     Serial.println("MDNS responder started");
+    
+    updateServer.setup(&server);
+    
     MDNS.addService("http", "tcp", 80);
     MDNS.addService("ws", "tcp", 81);
 
@@ -390,33 +418,29 @@ void setup(void)
   INDEX_HTML.replace("{NAME}",String(config_name));
 
 
-  //Setup OTA
-  //helper.ota_setup(config_name);
-  {
-    // Authentication to avoid unauthorized updates
-    //ArduinoOTA.setPassword(OTA_PWD);
+  // Setup OTA
+  // Authentication to avoid unauthorized updates
+  ArduinoOTA.setPasswordHash(ota_hash);
+  ArduinoOTA.setHostname(config_name);
 
-    ArduinoOTA.setHostname(config_name);
-
-    ArduinoOTA.onStart([]() {
-      Serial.println("Start");
-    });
-    ArduinoOTA.onEnd([]() {
-      Serial.println("\nEnd");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    });
-    ArduinoOTA.begin();
-  }
+  ArduinoOTA.onStart([]() {
+    Serial.println("Start");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin();
 
   // Setting up pins for switches to PULLUP mode to have a defined state
   pinMode(blinds_up_pin, INPUT_PULLUP);
