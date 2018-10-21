@@ -24,7 +24,7 @@ String APpw = "welcome";         // Hardcoded password for access point
 //----------------------------------------------------
 
 // Version number for checking if there are new code releases and notifying the user
-String version = "1.4";
+String version = "1.5";
 
 NidayandHelper helper = NidayandHelper();
 
@@ -57,7 +57,7 @@ bool shouldSaveConfig = false;      //Used for WIFI Manager callback to save par
 boolean initLoop = true;            //To enable actions first time the loop is run
 boolean ccw = true;                 //Turns counter clockwise to lower the curtain
 
-AccelStepper small_stepper(AccelStepper::FULL4WIRE, D1, D3, D2, D4); //Initiate stepper driver
+AccelStepper small_stepper(AccelStepper::FULL4WIRE, D1, D3, D2, D7); //Initiate stepper driver
 const float MAX_SPEED = 650.0;
 
 ESP8266WebServer server(80);              // TCP server at port 80 will respond to HTTP requests
@@ -291,7 +291,7 @@ void setup(void)
 
   //Set the WIFI hostname
   WiFi.hostname(config_name);
-
+  
   //Define customer parameters for WIFI Manager
   WiFiManagerParameter custom_config_name("Name", "Bonjour name", config_name, 40);
   WiFiManagerParameter custom_rotation("Rotation", "Clockwise rotation", config_rotation, 40);
@@ -324,7 +324,7 @@ void setup(void)
   wifiManager.addParameter(&custom_text2);
 
   wifiManager.autoConnect(APid.c_str(), APpw.c_str());
-
+  
   //Load config upon start
   if (!SPIFFS.begin()) {
     Serial.println("Failed to mount file system");
